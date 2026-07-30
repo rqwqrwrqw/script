@@ -3825,7 +3825,7 @@ function NeverLose:RegisiterItem(Frame: Frame , Signel)
 		end;
 
 		function UserFrameItem:SetProfile(Profile)
-			LogoImage.Image = "rbxassetid://123456789012345"
+			LogoImage.Image = "rbxassetid://113346218309690"
 		end;
 
 		function UserFrameItem:SetExpires(Exp)
