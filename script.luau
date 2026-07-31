@@ -17,7 +17,6 @@
   - 한국어 ON/OFF 스위치 연동 다국어 완벽 지원 (기본 실행 시 완벽 한글 표기)
   - 오른쪽 UI 알림 위치 오른쪽 맨 아래 배치
   - 킬피드 UI 위치를 오른쪽 맨 아래로 이동
-  - 락온 대상 처치 시 킬피드 중복 출력 현상 수정
 --]]
 
 local Players = game:GetService("Players")
@@ -398,7 +397,7 @@ local function monitorPlayerDeath(p)
         local hum = char:WaitForChild("Humanoid", 5)
         if hum then
             hum.Died:Connect(function()
-                local nameStr = getFormattedName(p)
+                local nameStr = p.Name
                 local myChar = player.Character
                 local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
                 local targetHrp = char:FindFirstChild("HumanoidRootPart")
@@ -706,10 +705,22 @@ local function isValidTarget(targetPlayer)
     local myTeam = player.Team and player.Team.Name or ""
     local tTeam = targetPlayer.Team and targetPlayer.Team.Name or ""
 
+    if myTeam == "Criminal" and tTeam == "Criminal" then return false end
+    if myTeam == "Police" and tTeam == "Police" then return false end
+    if myTeam == "Prisoner" and tTeam == "Prisoner" then return false end
     if myTeam == "Marines" and tTeam == "Marines" then return false end
     if myTeam == "Criminals" and tTeam == "Criminals" then return false end
     if myTeam == "Guards" and tTeam == "Guards" then return false end
     if myTeam == "Inmates" and tTeam == "Inmates" then return false end
+
+
+    local qqTeams = {
+        ["Criminal"] = true, ["Police"] = true, ["Prisoner"] = true
+    }
+
+    if qqTeams[myTeam] then
+        if tTeam == "Prisoner" then return false end
+    end
 
     local policeTeams = {
         ["Criminals"] = true, ["Guards"] = true, ["Inmates"] = true
@@ -1107,8 +1118,8 @@ local function toggleLockOn()
 
             if myHrp and targetHrp then
                 local dist = (myHrp.Position - targetHrp.Position).Magnitude
-                if dist > 800 then
-                    showNotification("⚠️ 타겟이 너무 멉니다 (800m 이상 락온 불가).", "⚠️ Target too far (> 800m).")
+                if dist > 640 then
+                    showNotification("⚠️ 타겟이 너무 멉니다 (640m 이상 락온 불가).", "⚠️ Target too far (> 640m).")
                     playSound(8503529139, 1, 0.8)
                     return
                 end
@@ -2066,6 +2077,17 @@ RunService.RenderStepped:Connect(function(dt)
         if not lockOnTarget or not lockOnTarget.Parent or not targetChar or not targetHumanoid or targetHumanoid.Health <= 0 or not isValidTarget(lockOnTarget) then
             
             if targetHumanoid and targetHumanoid.Health <= 0 and targetChar then
+                local victimName = lockOnTarget and getFormattedName(lockOnTarget) or "상대"
+
+                local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                local targetHrp = targetChar:FindFirstChild("HumanoidRootPart") or targetChar:FindFirstChild("Torso")
+                local distStr = "10m"
+                if myHrp and targetHrp then
+                    distStr = string.format("%dm", math.floor((myHrp.Position - targetHrp.Position).Magnitude))
+                end
+                
+                addKillFeedMessage(victimName, distStr)
+
                 local hrp = targetChar:FindFirstChild("HumanoidRootPart") or targetChar:FindFirstChild("Torso") or targetChar:FindFirstChild("UpperTorso") or targetChar:FindFirstChild("Head")
                 if hrp then
                     local deathPos = hrp.Position
@@ -2133,8 +2155,8 @@ RunService.RenderStepped:Connect(function(dt)
             
             if myHrp and targetHrp then
                 local dist = (myHrp.Position - targetHrp.Position).Magnitude
-                if dist > 800 then
-                    showNotification("⚠️ 타겟이 800 밖으로 벗어나 락온이 해제되었습니다.", "⚠️ Target out of range (> 800).")
+                if dist > 640 then
+                    showNotification("⚠️ 타겟이 640m 밖으로 벗어나 락온이 해제되었습니다.", "⚠️ Target out of range (> 640m).")
                     playSound(8503529139, 1, 0.8)
                     removeLockOnMarker()
                     lockOnActive = false
