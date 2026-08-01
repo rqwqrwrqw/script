@@ -1118,8 +1118,8 @@ local function toggleLockOn()
 
             if myHrp and targetHrp then
                 local dist = (myHrp.Position - targetHrp.Position).Magnitude
-                if dist > 640 then
-                    showNotification("⚠️ 타겟이 너무 멉니다 (640m 이상 락온 불가).", "⚠️ Target too far (> 640m).")
+                if dist > 1000 then
+                    showNotification("⚠️ 타겟이 너무 멉니다 (1000m 이상 락온 불가).", "⚠️ Target too far (> 1000m).")
                     playSound(8503529139, 1, 0.8)
                     return
                 end
@@ -2155,8 +2155,8 @@ RunService.RenderStepped:Connect(function(dt)
             
             if myHrp and targetHrp then
                 local dist = (myHrp.Position - targetHrp.Position).Magnitude
-                if dist > 640 then
-                    showNotification("⚠️ 타겟이 640m 밖으로 벗어나 락온이 해제되었습니다.", "⚠️ Target out of range (> 640m).")
+                if dist > 1000 then
+                    showNotification("⚠️ 타겟이 1000m 밖으로 벗어나 락온이 해제되었습니다.", "⚠️ Target out of range (> 1000m).")
                     playSound(8503529139, 1, 0.8)
                     removeLockOnMarker()
                     lockOnActive = false
