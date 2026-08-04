@@ -17,6 +17,7 @@
   - 한국어 ON/OFF 스위치 연동 다국어 완벽 지원 (기본 실행 시 완벽 한글 표기)
   - 오른쪽 UI 알림 위치 오른쪽 맨 아래 배치
   - 킬피드 UI 위치를 오른쪽 맨 아래로 이동
+  - External Scripts 아래에 개별 키 기능 ON/OFF 제어 스위치 구현 (End, End 길게, PgDn, PgDn 길게, ], ] 길게)
 --]]
 
 local Players = game:GetService("Players")
@@ -39,6 +40,16 @@ local showKillFeed = true
 local isKoreanLang = true
 
 local isHeadlessEnabled = false
+
+-- 개별 키 기능 활성화/비활성화 제어 테이블 (기본값 true)
+local keyStates = {
+    End = true,             -- End 클릭 (프리캠 토글)
+    EndLong = true,         -- End 길게 누르기 (FOV 초기화)
+    PgDn = true,            -- PgDn 클릭 (카메라 이동)
+    PgDnLong = true,        -- PgDn 길게 누르기 (공간 도약)
+    RightBracket = true,    -- ] 클릭 (머리 트래킹)
+    RightBracketLong = true -- ] 길게 누르기 (TP 모드)
+}
 
 -- 알림 제어 상태 변수 (Left -> Right UI 로그, Right -> Left UI 알림으로 반대로 매핑)
 local leftNotifyEnabled = false
@@ -1596,6 +1607,64 @@ extSec:AddButton({
     end
 })
 
+-- External Scripts 아래 추가된 단축키 입력 제어 섹션
+local keyControlSec = envTab:AddSection({ Name = "Key Bind Controls", Position = 'right' })
+
+local endKeyLabelObj = keyControlSec:AddLabel('End 키 (프리캠 토글)')
+endKeyLabelObj:AddToggle({
+    Default = true, Flag = "key_end_toggle",
+    Callback = function(v)
+        keyStates.End = v
+        if not v and freecamEnabled then
+            disableFreecam(false)
+        end
+    end
+})
+
+local endLongKeyLabelObj = keyControlSec:AddLabel('End 길게누르기 (FOV 초기화)')
+endLongKeyLabelObj:AddToggle({
+    Default = true, Flag = "key_end_long_toggle",
+    Callback = function(v)
+        keyStates.EndLong = v
+    end
+})
+
+local pgdnKeyLabelObj = keyControlSec:AddLabel('PgDn 키 (카메라 이동)')
+pgdnKeyLabelObj:AddToggle({
+    Default = true, Flag = "key_pgdn_toggle",
+    Callback = function(v)
+        keyStates.PgDn = v
+    end
+})
+
+local pgdnLongKeyLabelObj = keyControlSec:AddLabel('PgDn 길게누르기 (공간 도약)')
+pgdnLongKeyLabelObj:AddToggle({
+    Default = true, Flag = "key_pgdn_long_toggle",
+    Callback = function(v)
+        keyStates.PgDnLong = v
+    end
+})
+
+local bracketKeyLabelObj = keyControlSec:AddLabel('] 키 (머리 트래킹)')
+bracketKeyLabelObj:AddToggle({
+    Default = true, Flag = "key_bracket_toggle",
+    Callback = function(v)
+        keyStates.RightBracket = v
+    end
+})
+
+local bracketLongKeyLabelObj = keyControlSec:AddLabel('] 길게누르기 (TP 모드)')
+bracketLongKeyLabelObj:AddToggle({
+    Default = true, Flag = "key_bracket_long_toggle",
+    Callback = function(v)
+        keyStates.RightBracketLong = v
+        if not v and tpModeActive then
+            tpModeActive = false
+            showNotification("🚫 TP 모드가 해제되었습니다.", "🚫 TP Mode Disabled.")
+        end
+    end
+})
+
 -- UI 단축키 및 시스템 설정 (메뉴 크기 드롭다운 한글화 연동)
 local menuKeybindLabelObj = window.UserSettings:AddLabel("메뉴 단축키")
 menuKeybindLabelObj:AddKeybind({
@@ -1677,6 +1746,12 @@ langToggleLabelObj:AddToggle({
             if menuKeybindLabelObj.SetText then menuKeybindLabelObj:SetText("메뉴 단축키") end
             if menuScaleLabelObj.SetText then menuScaleLabelObj:SetText('메뉴 크기') end
             if langToggleLabelObj.SetText then langToggleLabelObj:SetText('한국어') end
+            if endKeyLabelObj.SetText then endKeyLabelObj:SetText('End 키 (프리캠 토글)') end
+            if endLongKeyLabelObj.SetText then endLongKeyLabelObj:SetText('End 길게누르기 (FOV 초기화)') end
+            if pgdnKeyLabelObj.SetText then pgdnKeyLabelObj:SetText('PgDn 키 (카메라 이동)') end
+            if pgdnLongKeyLabelObj.SetText then pgdnLongKeyLabelObj:SetText('PgDn 길게누르기 (공간 도약)') end
+            if bracketKeyLabelObj.SetText then bracketKeyLabelObj:SetText('] 키 (머리 트래킹)') end
+            if bracketLongKeyLabelObj.SetText then bracketLongKeyLabelObj:SetText('] 길게누르기 (TP 모드)') end
             showNotification("🌐 한국어 번역이 활성화되었습니다.")
         else
             if customItemLabel.SetText then customItemLabel:SetText("Custom Item") end
@@ -1699,6 +1774,12 @@ langToggleLabelObj:AddToggle({
             if menuKeybindLabelObj.SetText then menuKeybindLabelObj:SetText("Menu Keybind") end
             if menuScaleLabelObj.SetText then menuScaleLabelObj:SetText('Menu Scale') end
             if langToggleLabelObj.SetText then langToggleLabelObj:SetText('Korean') end
+            if endKeyLabelObj.SetText then endKeyLabelObj:SetText('End Key (Freecam)') end
+            if endLongKeyLabelObj.SetText then endLongKeyLabelObj:SetText('End Hold (FOV Reset)') end
+            if pgdnKeyLabelObj.SetText then pgdnKeyLabelObj:SetText('PgDn Key (Move Camera)') end
+            if pgdnLongKeyLabelObj.SetText then pgdnLongKeyLabelObj:SetText('PgDn Hold (Teleport)') end
+            if bracketKeyLabelObj.SetText then bracketKeyLabelObj:SetText('] Key (Head Track)') end
+            if bracketLongKeyLabelObj.SetText then bracketLongKeyLabelObj:SetText('] Hold (TP Mode)') end
             showNotification("🌐 English Language Enabled.", "🌐 English Language Enabled.")
         end
         updateRightSideBar()
@@ -1736,6 +1817,10 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
         task.delay(0.4, function()
             if inputState.End == true then
                 inputState.End = "LongPressed"
+                if not keyStates.EndLong then
+                    showNotification("⚠️ End 길게누르기 기능이 비활성화되어 있습니다.", "⚠️ End Hold Key is disabled.")
+                    return
+                end
                 if freecamEnabled then
                     targetFov = 70
                     showNotification("🔍 FOV가 70으로 초기화되었습니다.", "🔍 FOV reset to 70.") playSound(8503529139, 1, 1)
@@ -1749,6 +1834,10 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
         task.delay(0.4, function()
             if inputState.RightBracket == true then
                 inputState.RightBracket = "LongPressed"
+                if not keyStates.RightBracketLong then
+                    showNotification("⚠️ ] 길게누르기 기능이 비활성화되어 있습니다.", "⚠️ ] Hold Key is disabled.")
+                    return
+                end
                 -- 락온 상태일 때는 TP 모드 켜기 차단
                 if lockOnActive then
                     showNotification("⚠️ 락온 상태에서는 TP 모드를 켤 수 없습니다.", "⚠️ Cannot enable TP mode while Lock-On is active.")
@@ -1793,6 +1882,10 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
         task.delay(0.4, function()
             if inputState.PgDn == true then
                 inputState.PgDn = "LongPressed"
+                if not keyStates.PgDnLong then
+                    showNotification("⚠️ PgDn 길게누르기 기능이 비활성화되어 있습니다.", "⚠️ PgDn Hold Key is disabled.")
+                    return
+                end
                 if freecamEnabled then
                     local character = player.Character
                     if character and character:FindFirstChild("HumanoidRootPart") then
@@ -1889,36 +1982,48 @@ UserInputService.InputEnded:Connect(function(input, gameProcessed)
 
     if key == Enum.KeyCode.End then
         if inputState.End == true then
-            if freecamEnabled then disableFreecam(false) else enableFreecam() end
+            if not keyStates.End then
+                showNotification("⚠️ End 키 기능이 비활성화되어 있습니다.", "⚠️ End Key is disabled.")
+            else
+                if freecamEnabled then disableFreecam(false) else enableFreecam() end
+            end
         end
         inputState.End = false
     end
 
     if key == Enum.KeyCode.RightBracket then
         if inputState.RightBracket == true then
-            if freecamEnabled then showNotification("⚠️ 프리캠 작동 중에는 사용할 수 없습니다.", "⚠️ Unavailable during Freecam.") return end
-            headLockActive = not headLockActive
-            if headLockActive then 
-                showNotification("👀 캐릭터 머리 트래킹이 활성화되었습니다.", "👀 Head Tracking Enabled.") 
-                playSound(8503529139, 1, 1.2)
-            else 
-                showNotification("🚫 캐릭터 머리 트래킹이 해제되었습니다. (몸통 고정)", "🚫 Head Tracking Disabled.") 
-                playSound(8503529139, 1, 0.8) 
+            if not keyStates.RightBracket then
+                showNotification("⚠️ ] 키 기능이 비활성화되어 있습니다.", "⚠️ ] Key is disabled.")
+            else
+                if freecamEnabled then showNotification("⚠️ 프리캠 작동 중에는 사용할 수 없습니다.", "⚠️ Unavailable during Freecam.") return end
+                headLockActive = not headLockActive
+                if headLockActive then 
+                    showNotification("👀 캐릭터 머리 트래킹이 활성화되었습니다.", "👀 Head Tracking Enabled.") 
+                    playSound(8503529139, 1, 1.2)
+                else 
+                    showNotification("🚫 캐릭터 머리 트래킹이 해제되었습니다. (몸통 고정)", "🚫 Head Tracking Disabled.") 
+                    playSound(8503529139, 1, 0.8) 
+                end
+                if lockOnActive and lockOnTarget and lockOnTarget.Character then createLockOnMarker(lockOnTarget.Character) end
             end
-            if lockOnActive and lockOnTarget and lockOnTarget.Character then createLockOnMarker(lockOnTarget.Character) end
         end
         inputState.RightBracket = false
     end
 
     if key == Enum.KeyCode.PageDown then
         if inputState.PgDn == true then
-            if freecamEnabled then
-                local character = player.Character
-                if character and character:FindFirstChild("HumanoidRootPart") then
-                    position = character.HumanoidRootPart.Position + Vector3.new(0, 3, 0)
-                    showNotification("🏃 카메라가 캐릭터 위치로 이동했습니다.", "🏃 Camera moved to player.") playSound(8503529139, 1, 1.2) 
-                end
-            else playSound(8503529139, 1, 1.1) end
+            if not keyStates.PgDn then
+                showNotification("⚠️ PgDn 키 기능이 비활성화되어 있습니다.", "⚠️ PgDn Key is disabled.")
+            else
+                if freecamEnabled then
+                    local character = player.Character
+                    if character and character:FindFirstChild("HumanoidRootPart") then
+                        position = character.HumanoidRootPart.Position + Vector3.new(0, 3, 0)
+                        showNotification("🏃 카메라가 캐릭터 위치로 이동했습니다.", "🏃 Camera moved to player.") playSound(8503529139, 1, 1.2) 
+                    end
+                else playSound(8503529139, 1, 1.1) end
+            end
         end
         inputState.PgDn = false
     end
