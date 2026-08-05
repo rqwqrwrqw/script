@@ -1,23 +1,16 @@
 --[[
-  Smart Freecam & ESP Hub (Modified & Fixed - Full Version)
+  Smart Freecam & ESP Hub (Full Version - Modified & Updated)
   - 실행 시 초기 로딩 알림/소리 제거
-  - Infinite Yield / DEX Explorer 실행 시 오른쪽 상단 알림 삭제 및 화면 모달(취소/확인) 창으로 변경
-  - Left / Right Notification 스위치 동작 반대로 변경
-  - Headless 및 기타 상태의 재접속/재실행 시 자동 저장 비활성화 (항상 기본 OFF)
-  - 머리 고정 모드 / 락온 모드 추적 시 카메라 에임이 끊기지 않도록 고정 로직 수정
-  - Show Kill Feed 토글 스위치 추가 (Kill Feed UI 숨기기/보이기)
-  - HP 표시 UI를 Watermark 맨 왼쪽에 추가 ( [ HP ] / [ 핑 ] / [ Smart Hub ] 형태 )
-  - 실행 시 설정창 자동 열림 방지 (창이 자동으로 열리지 않도록 설정)
-  - 3D 메뉴 -> 한국어 변경 및 기본 활성화
-  - Custom Item 순서 및 항목 수정 (뿔 / 날개 / 모자 순서, 뿔 카테고리 내 보라뿔 우선배치)
-  - 킬 이펙트 하얀색 변경 및 지정 이미지 ID/크기 조정 적용 (76182265997200)
-  - Skin 실시간 변경 및 선택 스킨 전용 삭제 적용
-  - 킬피드 UI 디자인 모던/세련되게 개선 (둥근 디자인 & 죽은사람/거리만 표시)
-  - 내 캐릭터 Viewport 표시 삭제
-  - 한국어 ON/OFF 스위치 연동 다국어 완벽 지원 (기본 실행 시 완벽 한글 표기)
-  - 오른쪽 UI 알림 위치 오른쪽 맨 아래 배치
-  - 킬피드 UI 위치를 오른쪽 맨 아래로 이동
-  - External Scripts 아래에 개별 키 기능 ON/OFF 제어 스위치 구현 (End, End 길게, PgDn, PgDn 길게, ], ] 길게)
+  - Infinite Yield / DEX Explorer 실행 시 모달 창
+  - 락온 (자연스러운 에임) 적중률 및 이동 예측 보정 적용
+  - 락온 거리 조절 슬라이더 및 초기화 버튼 추가 (기본 1000m)
+  - ESP 아래 '락온 무지개 ESP' 토글 추가 (기본 OFF 설정)
+  - Status Bar UI: HP (락온시에만 표시) / 핑 / Smart Hub 구성
+  - Key Bind Controls: 실행 시 락온 외 나머지 기능 기본 OFF (비활성화 알림 안 뜸)
+  - UI 메뉴 기본 크기: 크게 (Large)
+  - [수정] 프리캠 모드 마우스 시점 회동(화면 이동) 기능 복구
+  - [수정] PgDn 키 (카메라를 내 위치로 이동) 단축키 로직 구현 완료
+  - [수정] ESP 닉네임 및 락온 무지개 ESP 표시 위치(Head Adornee & Offset) 보정
 --]]
 
 local Players = game:GetService("Players")
@@ -40,18 +33,28 @@ local showKillFeed = true
 local isKoreanLang = true
 
 local isHeadlessEnabled = false
+local legitLockEnabled = false -- 락온 (자연스러운 에임) 변수
+local lockOnEspEnabled = false -- 락온 무지개 ESP 활성화 변수 (기본 OFF)
+local maxLockOnDistance = 1000 -- 락온 최대 거리 변수 (기본 1000m)
 
--- 개별 키 기능 활성화/비활성화 제어 테이블 (기본값 true)
+-- 개별 키 및 기능 활성화/비활성화 제어 테이블 (실행 시 락온만 true, 나머지 false)
 local keyStates = {
-    End = true,             -- End 클릭 (프리캠 토글)
-    EndLong = true,         -- End 길게 누르기 (FOV 초기화)
-    PgDn = true,            -- PgDn 클릭 (카메라 이동)
-    PgDnLong = true,        -- PgDn 길게 누르기 (공간 도약)
-    RightBracket = true,    -- ] 클릭 (머리 트래킹)
-    RightBracketLong = true -- ] 길게 누르기 (TP 모드)
+    LockOn = true,          -- 락온 기능 (마우스 휠클릭)
+    End = false,            -- End 클릭 (프리캠 토글)
+    EndLong = false,        -- End 길게 누르기 (FOV 초기화)
+    PgDn = false,           -- PgDn 클릭 (카메라 이동)
+    PgDnLong = false,       -- PgDn 길게 누르기 (공간 도약)
+    RightBracket = false,   -- ] 클릭 (머리 트래킹)
+    RightBracketLong = false-- ] 길게 누르기 (TP 모드)
 }
 
--- 알림 제어 상태 변수 (Left -> Right UI 로그, Right -> Left UI 알림으로 반대로 매핑)
+-- Watermark (상태 바) UI 표시 제어 변수 (HP / 핑 / Smart Hub)
+local showHpBlock = true
+local showPingBlock = true
+local showHubBlock = true
+local showWatermarkUI = true
+
+-- 알림 제어 상태 변수
 local leftNotifyEnabled = false
 local rightNotifyEnabled = true
 
@@ -124,12 +127,9 @@ local inputState = {
     End = false,
     Mb3 = false,
     Del = false,
-    RightBracket = false
+    RightBracket = false,
+    PgDn = false
 }
-
-local fps = 0
-local lastTime = os.clock()
-local frameCount = 0
 
 -- 세션 시간 측정용
 local startTime = os.clock()
@@ -168,7 +168,7 @@ local window = NeverLose:CreateWindow({
     Logo = NeverLose.GlobalLogo,
     Name = "Hub",
     Content = "0xxxna1",
-    Size = NeverLose.Scales.Default,
+    Size = NeverLose.Scales.Large, -- 실행 시 기본 메뉴 크기 크게 설정
     ConfigFolder = "FreecamHubConfig",
     Enable3DRenderer = false,
     Keybind = "Delete",
@@ -188,19 +188,47 @@ end
 local Watermark = window:Watermark()
 Watermark:SetRender(true)
 
--- Watermark 구성: [ HP ] / [ 핑 ] / [ Smart Hub ] 순서대로 배치
+-- Watermark 구성: [ HP ] / [ 핑 ] / [ Smart Hub ]
 local hpBlock = Watermark:AddBlock("heart-rate", "HP: - / -")
 local pingBlock = Watermark:AddBlock("chart-four-vertical-bars", "0 MS")
 local UITogg = Watermark:AddBlock("cube-vertexes", "Smart Hub")
+
+local function setBlockVisible(block, vis)
+    if not block then return end
+    pcall(function()
+        if type(block) == "table" then
+            if block.SetVisible then block:SetVisible(vis) end
+            if block.Frame then block.Frame.Visible = vis end
+            if block.Instance then block.Instance.Visible = vis end
+            if block.Container then block.Container.Visible = vis end
+            if block.Label then block.Label.Visible = vis end
+            if block.Text then block.Text.Visible = vis end
+        end
+        if block.Visible ~= nil then block.Visible = vis end
+    end)
+end
+
+local function updateWatermarkVisibility()
+    Watermark:SetRender(showWatermarkUI)
+    
+    -- HP는 showHpBlock, showWatermarkUI가 true이고 '락온(lockOnActive)' 중일 때만 표시
+    setBlockVisible(hpBlock, showHpBlock and showWatermarkUI and lockOnActive)
+    setBlockVisible(pingBlock, showPingBlock and showWatermarkUI)
+    setBlockVisible(UITogg, showHubBlock and showWatermarkUI)
+end
 
 UITogg:Input(function()
     window:ToggleInterface()
 end)
 
+-- 핑 실시간 업데이트 루프
 task.spawn(function()
-    while true do task.wait(1)
-        local pingVal = math.round(player:GetNetworkPing() * 1000)
-        pingBlock:SetText(tostring(pingVal) .. " MS")
+    while true do
+        task.wait(1)
+        if showPingBlock and showWatermarkUI and pingBlock then
+            local pingVal = math.round(player:GetNetworkPing() * 1000)
+            pingBlock:SetText(tostring(pingVal) .. " MS")
+        end
     end
 end)
 
@@ -233,7 +261,6 @@ sideText.TextYAlignment = Enum.TextYAlignment.Top
 sideText.TextWrapped = true
 sideText.Parent = rightSideGui
 
--- 알림 제어 함수 (오른쪽 알림을 오른쪽 맨 아래에 배치)
 local function showNotification(messageKr, messageEn)
     local msg = isKoreanLang and messageKr or (messageEn or messageKr)
     if leftNotifyEnabled then
@@ -247,7 +274,6 @@ local function showNotification(messageKr, messageEn)
             Position = UDim2.new(1, -20, 1, -20),
             AnchorPoint = Vector2.new(1, 1)
         })
-        -- 라이브러리 내부 오버라이드 지원 시 오른쪽 아래 강제 적용
         if notif and type(notif) == "table" and notif.Frame then
             notif.Frame.Position = UDim2.new(1, -20, 1, -20)
             notif.Frame.AnchorPoint = Vector2.new(1, 1)
@@ -256,7 +282,7 @@ local function showNotification(messageKr, messageEn)
 end
 
 -- -------------------------------------------------------------
--- 고급형 세련된 실시간 킬 피드 UI (죽은 사람 / 거리 표시)
+-- 고급형 세련된 실시간 킬 피드 UI
 -- -------------------------------------------------------------
 local realtimeKillFeedGui = Instance.new("ScreenGui")
 realtimeKillFeedGui.Name = "RealtimeKillFeedGui"
@@ -267,7 +293,6 @@ realtimeKillFeedGui.Parent = player:WaitForChild("PlayerGui")
 local killFeedContainer = Instance.new("Frame")
 killFeedContainer.Name = "KillFeedContainer"
 killFeedContainer.Size = UDim2.new(0, 260, 0, 300)
--- 킬피드 UI 위치를 오른쪽 맨 아래로 배치
 killFeedContainer.Position = UDim2.new(1, -280, 1, -20)
 killFeedContainer.AnchorPoint = Vector2.new(0, 1)
 killFeedContainer.BackgroundTransparency = 1
@@ -291,7 +316,6 @@ local function addKillFeedMessage(victimName, distStr)
     card.ClipsDescendants = true
     card.Parent = killFeedContainer
 
-    -- 둥근 카드 디자인
     local cCorner = Instance.new("UICorner")
     cCorner.CornerRadius = UDim.new(0, 8)
     cCorner.Parent = card
@@ -302,7 +326,6 @@ local function addKillFeedMessage(victimName, distStr)
     cStroke.Color = Color3.fromRGB(255, 60, 60)
     cStroke.Parent = card
 
-    -- 왼쪽 포인트 라인 (개선된 예쁜 캡슐형 인디케이터)
     local accentLine = Instance.new("Frame")
     accentLine.Size = UDim2.new(0, 3, 1, -8)
     accentLine.Position = UDim2.new(0, 4, 0.5, 0)
@@ -321,7 +344,6 @@ local function addKillFeedMessage(victimName, distStr)
     contentFrame.BackgroundTransparency = 1
     contentFrame.Parent = card
 
-    -- 사망자 표시 영역 (내 이름 제외, 죽은 사람 표시)
     local nameLabel = Instance.new("TextLabel")
     nameLabel.Size = UDim2.new(1, -55, 1, 0)
     nameLabel.Position = UDim2.new(0, 0, 0, 0)
@@ -334,7 +356,6 @@ local function addKillFeedMessage(victimName, distStr)
     nameLabel.Text = "☠️ " .. victimName
     nameLabel.Parent = contentFrame
 
-    -- 거리 뱃지
     local distBadge = Instance.new("Frame")
     distBadge.Size = UDim2.new(0, 48, 0, 18)
     distBadge.Position = UDim2.new(1, -50, 0.5, -9)
@@ -354,7 +375,6 @@ local function addKillFeedMessage(victimName, distStr)
     distLabel.Text = distStr or "10m"
     distLabel.Parent = distBadge
 
-    -- 스폰 애니메이션
     card.Position = UDim2.new(0, 50, 0, 0)
     card.BackgroundTransparency = 1
     TweenService:Create(card, TweenInfo.new(0.3, Enum.EasingStyle.Cubic, Enum.EasingDirection.Out), {
@@ -484,7 +504,6 @@ local function applyHornToCharacter(char, itemId, itemType)
             local handle = acc:FindFirstChild("Handle")
             if handle then
                 handle.CanCollide = false
-                
                 local handleAttachment = handle:FindFirstChildOfClass("Attachment")
                 local targetAttachment = nil
                 
@@ -582,16 +601,57 @@ local function removeLockOnMarker()
     end
 end
 
+local function createLockOnMarker(targetChar)
+    if not targetChar then return end
+    removeLockOnMarker()
+
+    -- '락온 (자연스러운 에임)'이 ON 상태이거나 '락온 무지개 ESP'가 OFF일 경우 하이라이트 생성 안 함
+    if legitLockEnabled or not lockOnEspEnabled then
+        return
+    end
+
+    local highlight = targetChar:FindFirstChild("LockOnHighlight")
+    if not highlight then
+        highlight = Instance.new("Highlight")
+        highlight.Name = "LockOnHighlight"
+        highlight.Adornee = targetChar
+        highlight.FillTransparency = 0.5
+        highlight.OutlineTransparency = 0
+        highlight.Parent = targetChar
+    end
+end
+
+-- 무지개 ESP 실시간 발광 회로
+task.spawn(function()
+    local hue = 0
+    while true do
+        task.wait(0.03)
+        hue = (hue + 0.01) % 1
+        local rainbowColor = Color3.fromHSV(hue, 0.9, 1)
+
+        if lockOnActive and lockOnTarget and lockOnTarget.Character and not legitLockEnabled and lockOnEspEnabled then
+            local highlight = lockOnTarget.Character:FindFirstChild("LockOnHighlight")
+            if highlight then
+                highlight.FillColor = rainbowColor
+                highlight.OutlineColor = rainbowColor
+            else
+                createLockOnMarker(lockOnTarget.Character)
+            end
+        else
+            removeLockOnMarker()
+        end
+    end
+end)
+
 local function onCharacterLoaded(char)
-    -- 나갔다 들어왔거나 스크립트를 재실행할 경우 저장되지 않도록 Headless 및 상태 항상 리셋
     isHeadlessEnabled = false
-    
     originalNeckC0 = nil
     currentNeck = nil
     smoothNeckC0 = nil
     equippedHorns = {}
 
     lockOnActive = false
+    updateWatermarkVisibility()
     removeLockOnMarker()
     lockOnTarget = nil
 
@@ -620,6 +680,7 @@ local function onCharacterLoaded(char)
     if hrp and hum then
         hum.Died:Connect(function()
             lockOnActive = false
+            updateWatermarkVisibility()
             removeLockOnMarker()
             lockOnTarget = nil
         end)
@@ -657,7 +718,6 @@ crosshair.Size = UDim2.new(0, 16, 0, 16) crosshair.AnchorPoint = Vector2.new(0.5
 local hLine = Instance.new("Frame") hLine.Size = UDim2.new(1, 0, 0, 2) hLine.Position = UDim2.new(0, 0, 0.5, -1) hLine.BackgroundColor3 = Color3.fromRGB(255, 255, 255) hLine.BorderSizePixel = 0 hLine.Parent = crosshair
 local vLine = Instance.new("Frame") vLine.Size = UDim2.new(0, 2, 1, 0) vLine.Position = UDim2.new(0.5, -1, 0, 0) vLine.BackgroundColor3 = Color3.fromRGB(255, 255, 255) vLine.BorderSizePixel = 0 vLine.Parent = crosshair
 
--- 오른쪽 쉬프트 조작 시 마우스 락 방지
 local function updateMouseState()
     if not freecamEnabled then
         UserInputService.MouseBehavior = Enum.MouseBehavior.Default
@@ -724,19 +784,12 @@ local function isValidTarget(targetPlayer)
     if myTeam == "Guards" and tTeam == "Guards" then return false end
     if myTeam == "Inmates" and tTeam == "Inmates" then return false end
 
-
-    local qqTeams = {
-        ["Criminal"] = true, ["Police"] = true, ["Prisoner"] = true
-    }
-
+    local qqTeams = { ["Criminal"] = true, ["Police"] = true, ["Prisoner"] = true }
     if qqTeams[myTeam] then
         if tTeam == "Prisoner" then return false end
     end
 
-    local policeTeams = {
-        ["Criminals"] = true, ["Guards"] = true, ["Inmates"] = true
-    }
-
+    local policeTeams = { ["Criminals"] = true, ["Guards"] = true, ["Inmates"] = true }
     if policeTeams[myTeam] then
         if tTeam == "Neutral" then return false end
     end
@@ -889,12 +942,15 @@ local function createESP(targetPlayer)
         
         local nameTag = character:FindFirstChild("ESPNameTag")
         if namesEnabled then
+            local targetHead = character:FindFirstChild("Head") or character:FindFirstChild("HumanoidRootPart")
             if not nameTag then
                 local bGui = Instance.new("BillboardGui")
                 bGui.Name = "ESPNameTag" 
                 bGui.AlwaysOnTop = true 
                 bGui.Size = UDim2.new(0, 200, 0, 30) 
-                bGui.StudsOffset = Vector3.new(0, 3.5, 0)
+                bGui.StudsOffset = Vector3.new(0, 3, 0)
+                if targetHead then bGui.Adornee = targetHead end
+                
                 local label = Instance.new("TextLabel")
                 label.Size = UDim2.new(1, 0, 1, 0) 
                 label.BackgroundTransparency = 1 
@@ -905,6 +961,10 @@ local function createESP(targetPlayer)
                 label.Parent = bGui
                 bGui.Parent = character 
                 nameTag = bGui
+            else
+                if targetHead and nameTag.Adornee ~= targetHead then
+                    nameTag.Adornee = targetHead
+                end
             end
             local label = nameTag:FindFirstChildOfClass("TextLabel")
             if label then 
@@ -1100,25 +1160,13 @@ local function disableFreecam(skipNotify)
     if not skipNotify then showNotification("❌ 프리캠이 비활성화되었습니다. (블록 보존됨)", "❌ Freecam Disabled.") playSound(8503529139, 0.9, 0.8) end
 end
 
-local function createLockOnMarker(targetChar)
-    if not targetChar then return end
-    removeLockOnMarker()
-    local highlight = targetChar:FindFirstChild("LockOnHighlight")
-    if not highlight then
-        highlight = Instance.new("Highlight")
-        highlight.Name = "LockOnHighlight"
-        highlight.FillTransparency = 0.6
-        highlight.OutlineTransparency = 0
-        highlight.Parent = targetChar
-    end
-end
-
 local function toggleLockOn()
     if lockOnActive then
         lockOnActive = false 
         removeLockOnMarker()
         lockOnTarget = nil
         hpBlock:SetText("HP: - / -")
+        updateWatermarkVisibility()
         showNotification("🎯 락온이 해제되었습니다.", "🎯 Lock-On Released.") playSound(8503529139, 1.2, 0.8)
     else
         local target = getTargetNearMouse()
@@ -1129,14 +1177,21 @@ local function toggleLockOn()
 
             if myHrp and targetHrp then
                 local dist = (myHrp.Position - targetHrp.Position).Magnitude
-                if dist > 1000 then
-                    showNotification("⚠️ 타겟이 너무 멉니다 (1000m 이상 락온 불가).", "⚠️ Target too far (> 1000m).")
+                if dist > maxLockOnDistance then
+                    showNotification(
+                        string.format("⚠️ 타겟이 너무 멉니다 (%dm 이상 락온 불가).", maxLockOnDistance), 
+                        string.format("⚠️ Target too far (> %dm).", maxLockOnDistance)
+                    )
                     playSound(8503529139, 1, 0.8)
                     return
                 end
             end
 
-            lockOnTarget = target lockOnActive = true createLockOnMarker(target.Character)
+            lockOnTarget = target 
+            lockOnActive = true 
+            updateWatermarkVisibility()
+            createLockOnMarker(target.Character)
+
             local targetName = getFormattedName(target) 
             local targetPartType = headLockActive and (isKoreanLang and "머리" or "Head") or (isKoreanLang and "몸통" or "Torso")
             showNotification("🎯 " .. targetName .. " " .. targetPartType .. " (Lock-On)", "🎯 Locked on to " .. targetName) playSound(8503529139, 1.4, 1.1)
@@ -1149,13 +1204,12 @@ end
 -- -------------------------------------------------------------
 -- UI 레이아웃 구성
 -- -------------------------------------------------------------
--- Mod 탭
 local modTab = window:AddTab({ Icon = 'cloud', Name = "Mod" })
 local camSec = modTab:AddSection({ Name = "Camera Control", Position = 'right' })
 local espSec = modTab:AddSection({ Name = "ESP Setup", Position = 'left' })
 local charSec = modTab:AddSection({ Name = "Character", Position = 'left' })
 
--- ESP 설정 섹션 (기본 한글 표기 적용)
+-- ESP 설정 섹션
 local espLabelObj = espSec:AddLabel('ESP (플레이어 강조)')
 espLabelObj:AddToggle({
     Default = false, Flag = "esp_toggle",
@@ -1168,6 +1222,20 @@ espLabelObj:AddToggle({
         else
             showNotification("🚫 ESP 기능이 비활성화되었습니다.", "🚫 ESP Deactivated.")
             playSound(8503529139, 1, 0.8)
+        end
+    end
+})
+
+-- 락온 무지개 ESP 토글 (기본 OFF)
+local lockOnEspLabelObj = espSec:AddLabel('락온 무지개 ESP')
+lockOnEspLabelObj:AddToggle({
+    Default = false, Flag = "lockon_rainbow_esp",
+    Callback = function(v)
+        lockOnEspEnabled = v
+        if not v then
+            removeLockOnMarker()
+        elseif lockOnActive and lockOnTarget and lockOnTarget.Character then
+            createLockOnMarker(lockOnTarget.Character)
         end
     end
 })
@@ -1186,7 +1254,6 @@ espNamesLabelObj:AddToggle({
     end
 })
 
--- 킬피드 표시/숨기기 토글 (기본 한글 표기 적용)
 local killfeedShowLabelObj = espSec:AddLabel('킬피드 표시')
 killfeedShowLabelObj:AddToggle({
     Default = true, Flag = "killfeed_show",
@@ -1217,7 +1284,51 @@ headTrackLabel:AddToggle({
     end
 })
 
--- Character 섹션 (Custom Item 카탈로그 연동: 뿔 / 날개 / 모자 순서)
+local legitLockLabelObj = espSec:AddLabel('락온 (자연스러운 에임)')
+legitLockLabelObj:AddToggle({
+    Default = false, Flag = "legit_lockon",
+    Callback = function(v)
+        legitLockEnabled = v
+        if legitLockEnabled then
+            removeLockOnMarker() -- 자연스러운 에임 활성화 시 무지개 ESP 숨김
+            showNotification("🤫 락온 (자연스러운 에임)이 활성화되었습니다.", "🤫 Legit Lock-On Enabled.")
+            playSound(8503529139, 1, 1.2)
+        else
+            if lockOnActive and lockOnTarget and lockOnTarget.Character then
+                createLockOnMarker(lockOnTarget.Character) -- 끄면 무지개 ESP 복구
+            end
+            showNotification("🎯 일반 락온(즉시 고정)으로 변경되었습니다.", "🎯 Instant Lock-On Enabled.")
+            playSound(8503529139, 1, 0.8)
+        end
+    end
+})
+
+-- 락온 최대 거리 설정 슬라이더
+local lockOnDistLabelObj = espSec:AddLabel('락온 최대 거리 (m)')
+local lockOnDistSlider = lockOnDistLabelObj:AddSlider({
+    Min = 100, Max = 5000, Default = 1000, Flag = "lockon_dist_slider",
+    Callback = function(v)
+        maxLockOnDistance = v
+    end
+})
+
+-- 락온 최대거리 초기화 버튼
+local resetLockOnDistBtn = espSec:AddButton({
+    Name = "락온 최대거리 초기화",
+    Callback = function()
+        maxLockOnDistance = 1000
+        if lockOnDistSlider then
+            pcall(function()
+                if lockOnDistSlider.Set then lockOnDistSlider:Set(1000) end
+                if lockOnDistSlider.SetValue then lockOnDistSlider:SetValue(1000) end
+            end)
+        end
+        showNotification("🔄 락온 최대 거리가 초기화되었습니다 (1000m).", "🔄 Lock-On Max Distance reset (1000m).")
+        playSound(8503529139, 1, 1)
+    end
+})
+
+-- Character 섹션 (Custom Item 카탈로그 연동)
 local hornOpts = {}
 local selectedHornIdx = 1
 local selectedSkinName = ""
@@ -1237,7 +1348,6 @@ local function getSkinNamesForIndex(idx)
     local names = {}
     if item and item.skins then
         if idx == 1 then
-            -- 뿔 카테고리: 보라뿔 우선 순서 지정
             names = {"보라뿔", "빨간불", "파란불"}
         else
             for skinName, _ in pairs(item.skins) do
@@ -1268,7 +1378,6 @@ local customItemDropdown = customItemLabel:AddDropdown({
     end
 })
 
--- Apply Item 위에 위치하는 Skin 드롭다운 (실시간 반응 기능 구현)
 local skinLabel = charSec:AddLabel('스킨')
 skinDropdown = skinLabel:AddDropdown({
     Default = getSkinNamesForIndex(1)[1], 
@@ -1283,7 +1392,6 @@ skinDropdown = skinLabel:AddDropdown({
         local newSkinId = itemData.skins and itemData.skins[selectedSkinName]
         if not newSkinId then return end
 
-        -- 기존 동일 카테고리 아이템이 착용 중이면 실시간 교체
         local oldSkinIdToRemove = nil
         for skinName, sId in pairs(itemData.skins or {}) do
             if activeAppliedItems[sId] and sId ~= newSkinId then
@@ -1437,7 +1545,7 @@ rmAccLabelObj:AddToggle({
 -- Client 탭
 local envTab = window:AddTab({ Icon = 'folder', Name = "Client" })
 
--- SYSTEM OVERVIEW (한국어 적용 수정)
+-- SYSTEM OVERVIEW
 local sysOverviewSec = envTab:AddSection({ Name = "SYSTEM OVERVIEW", Position = 'left' })
 
 local sessionTimeLabel = sysOverviewSec:AddLabel("세션: 00:00:00")
@@ -1455,17 +1563,13 @@ task.spawn(function()
         local serverPrefix = isKoreanLang and "서버" or "Server"
         local playerPrefix = isKoreanLang and "플레이어" or "Players"
         
-        local timeStr = string.format("%s: %02d:%02d:%02d", sessionPrefix, hrs, mins, secs)
-        local serverStr = string.format("%s: AS", serverPrefix)
-        local playersStr = string.format("%s: %d/%d", playerPrefix, #Players:GetPlayers(), Players.MaxPlayers)
-        
-        sessionTimeLabel:SetText(timeStr)
-        serverRegionLabel:SetText(serverStr)
-        playersCountLabel:SetText(playersStr)
+        sessionTimeLabel:SetText(string.format("%s: %02d:%02d:%02d", sessionPrefix, hrs, mins, secs))
+        serverRegionLabel:SetText(string.format("%s: AS", serverPrefix))
+        playersCountLabel:SetText(string.format("%s: %d/%d", playerPrefix, #Players:GetPlayers(), Players.MaxPlayers))
     end
 end)
 
--- Anti-AFK (기본 한글 표기 적용)
+-- Anti-AFK
 local antiAfkSec = envTab:AddSection({ Name = "Anti-AFK System", Position = 'right' })
 local antiAfkEnabled = true
 
@@ -1491,22 +1595,62 @@ player.Idled:Connect(function()
     end
 end)
 
--- Notifications (기본 한글 표기 적용)
+-- Notifications
 local notifySec = envTab:AddSection({ Name = "Notifications", Position = 'left' })
 
 local leftNotifyLabelObj = notifySec:AddLabel('왼쪽 알림 로그')
 leftNotifyLabelObj:AddToggle({
     Default = false, Flag = "left_notify",
-    Callback = function(v)
-        leftNotifyEnabled = v
-    end
+    Callback = function(v) leftNotifyEnabled = v end
 })
 
 local rightNotifyLabelObj = notifySec:AddLabel('오른쪽 UI 알림')
 rightNotifyLabelObj:AddToggle({
     Default = true, Flag = "right_notify",
+    Callback = function(v) rightNotifyEnabled = v end
+})
+
+-- Status Bar Custom (HP / 핑 / Smart Hub)
+local watermarkSec = envTab:AddSection({ Name = "Status Bar (Watermark)", Position = 'left' })
+
+local hpBarToggleObj = watermarkSec:AddLabel('상대 HP 표시')
+hpBarToggleObj:AddToggle({
+    Default = true, Flag = "show_hp_bar",
     Callback = function(v)
-        rightNotifyEnabled = v
+        showHpBlock = v
+        updateWatermarkVisibility()
+    end
+})
+
+local pingBarToggleObj = watermarkSec:AddLabel('핑 표시')
+pingBarToggleObj:AddToggle({
+    Default = true, Flag = "show_ping_bar",
+    Callback = function(v)
+        showPingBlock = v
+        updateWatermarkVisibility()
+    end
+})
+
+local hubBarToggleObj = watermarkSec:AddLabel('Smart Hub 표시')
+hubBarToggleObj:AddToggle({
+    Default = true, Flag = "show_hub_bar",
+    Callback = function(v)
+        showHubBlock = v
+        updateWatermarkVisibility()
+    end
+})
+
+local barShowToggleObj = watermarkSec:AddLabel('Status Bar 표시 / 숨기기')
+barShowToggleObj:AddToggle({
+    Default = true, Flag = "show_watermark_ui",
+    Callback = function(v)
+        showWatermarkUI = v
+        updateWatermarkVisibility()
+        if v then
+            showNotification("상단 바 UI가 표시됩니다.", "Status bar displayed.")
+        else
+            showNotification("상단 바 UI가 숨겨졌습니다.", "Status bar hidden.")
+        end
     end
 })
 
@@ -1572,7 +1716,7 @@ fogLabel:AddToggle({
     end
 })
 
--- External Scripts (화면 중앙 모달 창 적용)
+-- External Scripts
 local extSec = envTab:AddSection({ Name = "External Scripts", Position = 'right' })
 
 extSec:AddButton({
@@ -1583,9 +1727,7 @@ extSec:AddButton({
                 local success = pcall(function() 
                     loadstring(game:HttpGet('https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source'))() 
                 end)
-                if success then 
-                    playSound(8503529139, 1, 1) 
-                end
+                if success then playSound(8503529139, 1, 1) end
             end)
         end)
     end
@@ -1599,63 +1741,59 @@ extSec:AddButton({
                 local success = pcall(function() 
                     loadstring(game:HttpGet("https://rawscripts.net/raw/Universal-Script-Keyless-mobile-dex-17888"))() 
                 end)
-                if success then 
-                    playSound(8503529139, 1, 1) 
-                end
+                if success then playSound(8503529139, 1, 1) end
             end)
         end)
     end
 })
 
--- External Scripts 아래 추가된 단축키 입력 제어 섹션
 local keyControlSec = envTab:AddSection({ Name = "Key Bind Controls", Position = 'right' })
+
+local lockOnKeyLabelObj = keyControlSec:AddLabel('락온 기능 (마우스 휠클릭)')
+lockOnKeyLabelObj:AddToggle({
+    Default = true, Flag = "key_lockon_toggle",
+    Callback = function(v)
+        keyStates.LockOn = v
+        if not v and lockOnActive then toggleLockOn() end
+    end
+})
 
 local endKeyLabelObj = keyControlSec:AddLabel('End 키 (프리캠 토글)')
 endKeyLabelObj:AddToggle({
-    Default = true, Flag = "key_end_toggle",
+    Default = false, Flag = "key_end_toggle",
     Callback = function(v)
         keyStates.End = v
-        if not v and freecamEnabled then
-            disableFreecam(false)
-        end
+        if not v and freecamEnabled then disableFreecam(false) end
     end
 })
 
 local endLongKeyLabelObj = keyControlSec:AddLabel('End 길게누르기 (FOV 초기화)')
 endLongKeyLabelObj:AddToggle({
-    Default = true, Flag = "key_end_long_toggle",
-    Callback = function(v)
-        keyStates.EndLong = v
-    end
+    Default = false, Flag = "key_end_long_toggle",
+    Callback = function(v) keyStates.EndLong = v end
 })
 
 local pgdnKeyLabelObj = keyControlSec:AddLabel('PgDn 키 (카메라 이동)')
 pgdnKeyLabelObj:AddToggle({
-    Default = true, Flag = "key_pgdn_toggle",
-    Callback = function(v)
-        keyStates.PgDn = v
-    end
+    Default = false, Flag = "key_pgdn_toggle",
+    Callback = function(v) keyStates.PgDn = v end
 })
 
 local pgdnLongKeyLabelObj = keyControlSec:AddLabel('PgDn 길게누르기 (공간 도약)')
 pgdnLongKeyLabelObj:AddToggle({
-    Default = true, Flag = "key_pgdn_long_toggle",
-    Callback = function(v)
-        keyStates.PgDnLong = v
-    end
+    Default = false, Flag = "key_pgdn_long_toggle",
+    Callback = function(v) keyStates.PgDnLong = v end
 })
 
 local bracketKeyLabelObj = keyControlSec:AddLabel('] 키 (머리 트래킹)')
 bracketKeyLabelObj:AddToggle({
-    Default = true, Flag = "key_bracket_toggle",
-    Callback = function(v)
-        keyStates.RightBracket = v
-    end
+    Default = false, Flag = "key_bracket_toggle",
+    Callback = function(v) keyStates.RightBracket = v end
 })
 
 local bracketLongKeyLabelObj = keyControlSec:AddLabel('] 길게누르기 (TP 모드)')
 bracketLongKeyLabelObj:AddToggle({
-    Default = true, Flag = "key_bracket_long_toggle",
+    Default = false, Flag = "key_bracket_long_toggle",
     Callback = function(v)
         keyStates.RightBracketLong = v
         if not v and tpModeActive then
@@ -1665,13 +1803,13 @@ bracketLongKeyLabelObj:AddToggle({
     end
 })
 
--- UI 단축키 및 시스템 설정 (메뉴 크기 드롭다운 한글화 연동)
+-- UI 단축키 및 시스템 설정 (메뉴 크기 기본 '크게')
 local menuKeybindLabelObj = window.UserSettings:AddLabel("메뉴 단축키")
 menuKeybindLabelObj:AddKeybind({
     Default = 'Delete',
     Callback = function(v)
-        window.Keybind = v;
-        minimizeKeybind = v;
+        window.Keybind = v
+        minimizeKeybind = v
         Logging.new("ps4-touchpad", 'Changed ui keybind to '..tostring(v), 5)
     end,
 })
@@ -1683,16 +1821,9 @@ local scaleMapKrToEn = {
     ["작게"] = "Small"
 }
 
-local scaleMapEnToKr = {
-    ["Default"] = "기본",
-    ["Large"] = "크게",
-    ["Mobile"] = "모바일",
-    ["Small"] = "작게"
-}
-
 local menuScaleLabelObj = window.UserSettings:AddLabel('메뉴 크기')
 local menuScaleDropdown = menuScaleLabelObj:AddDropdown({
-    Default = "기본",
+    Default = "크게", -- 메뉴 크기 크게 기본 설정
     Values = {"기본", "크게", "모바일", "작게"},
     Callback = function(v)
         local targetScaleKey = scaleMapKrToEn[v] or v
@@ -1708,9 +1839,7 @@ langToggleLabelObj:AddToggle({
     Default = true,
     Callback = function(v)
         isKoreanLang = v
-        if window.Set3DRender then
-            window:Set3DRender(v)
-        end
+        if window.Set3DRender then window:Set3DRender(v) end
         updateHornOpts()
         
         if customItemDropdown and customItemDropdown.SetValues then
@@ -1735,17 +1864,26 @@ langToggleLabelObj:AddToggle({
             if shadowLabel.SetText then shadowLabel:SetText(shadowLabelTextKr) end
             if fogLabel.SetText then fogLabel:SetText(fogLabelTextKr) end
             if espLabelObj.SetText then espLabelObj:SetText('ESP (플레이어 강조)') end
+            if lockOnEspLabelObj.SetText then lockOnEspLabelObj:SetText('락온 무지개 ESP') end
             if espNamesLabelObj.SetText then espNamesLabelObj:SetText('닉네임 표시') end
             if killfeedShowLabelObj.SetText then killfeedShowLabelObj:SetText('킬피드 표시') end
             if headTrackLabel.SetText then headTrackLabel:SetText('정밀 머리 트래킹') end
+            if legitLockLabelObj and legitLockLabelObj.SetText then legitLockLabelObj:SetText('락온 (자연스러운 에임)') end
+            if lockOnDistLabelObj and lockOnDistLabelObj.SetText then lockOnDistLabelObj:SetText('락온 최대 거리 (m)') end
+            if resetLockOnDistBtn and resetLockOnDistBtn.SetText then resetLockOnDistBtn:SetText("락온 최대거리 초기화") end
             if headlessLabelObj.SetText then headlessLabelObj:SetText('헤드리스 모드') end
             if rmAccLabelObj.SetText then rmAccLabelObj:SetText('장신구 제거') end
             if antiAfkLabelObj.SetText then antiAfkLabelObj:SetText('Anti-AFK (강퇴 방지)') end
             if leftNotifyLabelObj.SetText then leftNotifyLabelObj:SetText('왼쪽 알림 로그') end
             if rightNotifyLabelObj.SetText then rightNotifyLabelObj:SetText('오른쪽 UI 알림') end
+            if hpBarToggleObj.SetText then hpBarToggleObj:SetText('상대 HP 표시') end
+            if pingBarToggleObj.SetText then pingBarToggleObj:SetText('핑 표시') end
+            if hubBarToggleObj.SetText then hubBarToggleObj:SetText('Smart Hub 표시') end
+            if barShowToggleObj.SetText then barShowToggleObj:SetText('Status Bar 표시 / 숨기기') end
             if menuKeybindLabelObj.SetText then menuKeybindLabelObj:SetText("메뉴 단축키") end
             if menuScaleLabelObj.SetText then menuScaleLabelObj:SetText('메뉴 크기') end
             if langToggleLabelObj.SetText then langToggleLabelObj:SetText('한국어') end
+            if lockOnKeyLabelObj.SetText then lockOnKeyLabelObj:SetText('락온 기능 (마우스 휠클릭)') end
             if endKeyLabelObj.SetText then endKeyLabelObj:SetText('End 키 (프리캠 토글)') end
             if endLongKeyLabelObj.SetText then endLongKeyLabelObj:SetText('End 길게누르기 (FOV 초기화)') end
             if pgdnKeyLabelObj.SetText then pgdnKeyLabelObj:SetText('PgDn 키 (카메라 이동)') end
@@ -1763,17 +1901,26 @@ langToggleLabelObj:AddToggle({
             if shadowLabel.SetText then shadowLabel:SetText(shadowLabelTextEn) end
             if fogLabel.SetText then fogLabel:SetText(fogLabelTextEn) end
             if espLabelObj.SetText then espLabelObj:SetText('ESP (Player Highlight)') end
+            if lockOnEspLabelObj.SetText then lockOnEspLabelObj:SetText('Lock-On Rainbow ESP') end
             if espNamesLabelObj.SetText then espNamesLabelObj:SetText('Display Names') end
             if killfeedShowLabelObj.SetText then killfeedShowLabelObj:SetText('Show Kill Feed') end
             if headTrackLabel.SetText then headTrackLabel:SetText('Precision Head Tracking') end
+            if legitLockLabelObj and legitLockLabelObj.SetText then legitLockLabelObj:SetText('Lock-On (Legit Smooth Aim)') end
+            if lockOnDistLabelObj and lockOnDistLabelObj.SetText then lockOnDistLabelObj:SetText('Lock-On Max Range (m)') end
+            if resetLockOnDistBtn and resetLockOnDistBtn.SetText then resetLockOnDistBtn:SetText("Reset Lock-On Distance") end
             if headlessLabelObj.SetText then headlessLabelObj:SetText('Headless Mode') end
             if rmAccLabelObj.SetText then rmAccLabelObj:SetText('Remove Accessories') end
             if antiAfkLabelObj.SetText then antiAfkLabelObj:SetText('Anti-AFK (Anti-Kick)') end
             if leftNotifyLabelObj.SetText then leftNotifyLabelObj:SetText('Left notification') end
             if rightNotifyLabelObj.SetText then rightNotifyLabelObj:SetText('Right notification') end
+            if hpBarToggleObj.SetText then hpBarToggleObj:SetText('HP Display') end
+            if pingBarToggleObj.SetText then pingBarToggleObj:SetText('Ping Display') end
+            if hubBarToggleObj.SetText then hubBarToggleObj:SetText('Smart Hub Display') end
+            if barShowToggleObj.SetText then barShowToggleObj:SetText('Toggle Status Bar') end
             if menuKeybindLabelObj.SetText then menuKeybindLabelObj:SetText("Menu Keybind") end
             if menuScaleLabelObj.SetText then menuScaleLabelObj:SetText('Menu Scale') end
             if langToggleLabelObj.SetText then langToggleLabelObj:SetText('Korean') end
+            if lockOnKeyLabelObj.SetText then lockOnKeyLabelObj:SetText('Lock-On Feature (MB3)') end
             if endKeyLabelObj.SetText then endKeyLabelObj:SetText('End Key (Freecam)') end
             if endLongKeyLabelObj.SetText then endLongKeyLabelObj:SetText('End Hold (FOV Reset)') end
             if pgdnKeyLabelObj.SetText then pgdnKeyLabelObj:SetText('PgDn Key (Move Camera)') end
@@ -1786,10 +1933,167 @@ langToggleLabelObj:AddToggle({
     end,
 })
 
+-- -------------------------------------------------------------
+-- 메인 RenderStepped 루프 (프리캠, 락온 에임, 머리 트래킹)
+-- -------------------------------------------------------------
+RunService.RenderStepped:Connect(function(deltaTime)
+    local camera = workspace.CurrentCamera
+    if not camera then return end
+
+    -- 1. 락온 트래킹 및 에임 보정
+    if lockOnActive and lockOnTarget and lockOnTarget.Character then
+        local tChar = lockOnTarget.Character
+        local tHum = tChar:FindFirstChildOfClass("Humanoid")
+        local targetPart = headLockActive and (tChar:FindFirstChild("Head") or tChar:FindFirstChild("HumanoidRootPart")) 
+                           or (tChar:FindFirstChild("HumanoidRootPart") or tChar:FindFirstChild("Torso") or tChar:FindFirstChild("Head"))
+
+        if tHum and tHum.Health > 0 and targetPart then
+            -- 상대 HP Watermark 실시간 업데이트 (락온 상태일 때만 활성화/표시)
+            if showHpBlock and showWatermarkUI and hpBlock then
+                setBlockVisible(hpBlock, true)
+                local currentHp = math.floor(tHum.Health)
+                local maxHp = math.floor(tHum.MaxHealth)
+                hpBlock:SetText(string.format("HP: %d / %d", currentHp, maxHp))
+            end
+
+            -- 실시간 거리 초과 체크
+            local myChar = player.Character
+            local myHrp = myChar and (myChar:FindFirstChild("HumanoidRootPart") or myChar:FindFirstChild("Torso"))
+            if myHrp then
+                local dist = (myHrp.Position - targetPart.Position).Magnitude
+                if dist > maxLockOnDistance then
+                    lockOnActive = false
+                    removeLockOnMarker()
+                    lockOnTarget = nil
+                    hpBlock:SetText("HP: - / -")
+                    updateWatermarkVisibility()
+                    showNotification("🎯 타겟이 사거리를 벗어나 락온이 해제되었습니다.", "🎯 Target out of range.")
+                    return
+                end
+            end
+
+            -- 락온 카메라 추적 로직
+            if not freecamEnabled then
+                if legitLockEnabled then
+                    -- [자연스러운 락온 에임 개선]
+                    -- 1박자 뒤쳐짐 방지: 이동 예측 보정 (AssemblyLinearVelocity)
+                    local targetVel = targetPart.AssemblyLinearVelocity or targetPart.Velocity or Vector3.zero
+                    local predictedPos = targetPart.Position + (targetVel * 0.038)
+                    
+                    -- 사람다운 미세 지터 오차 (자연스러움 유지 + 고명중률)
+                    local humanJitter = Vector3.new(
+                        math.sin(os.clock() * 12) * 0.08,
+                        math.cos(os.clock() * 10) * 0.08,
+                        0
+                    )
+                    predictedPos = predictedPos + humanJitter
+
+                    -- 프레임 지연이 없는 유연하고 빠른 스무스 Lerp 에임
+                    local currentCF = camera.CFrame
+                    local targetCF = CFrame.new(currentCF.Position, predictedPos)
+                    camera.CFrame = currentCF:Lerp(targetCF, math.clamp(deltaTime * 28, 0.25, 0.65))
+                else
+                    -- 일반 락온 (즉시 고정)
+                    camera.CFrame = CFrame.new(camera.CFrame.Position, targetPart.Position)
+                end
+            end
+        else
+            lockOnActive = false
+            removeLockOnMarker()
+            lockOnTarget = nil
+            hpBlock:SetText("HP: - / -")
+            updateWatermarkVisibility()
+            showNotification("🎯 타겟이 사망하여 락온이 해제되었습니다.", "🎯 Target died.")
+        end
+    else
+        -- 락온 해제 상태에서는 HP 블록을 숨김 처리
+        if showHpBlock and showWatermarkUI and hpBlock then
+            setBlockVisible(hpBlock, false)
+            if hpBlock.Text ~= "HP: - / -" then
+                hpBlock:SetText("HP: - / -")
+            end
+        end
+    end
+
+    -- 2. 머리 정밀 트래킹 (Head Lock)
+    if headLockActive and player.Character then
+        local char = player.Character
+        local neck = char:FindFirstChild("Neck", true)
+        local head = char:FindFirstChild("Head")
+        if neck and head then
+            if not currentNeck then
+                currentNeck = neck
+                originalNeckC0 = neck.C0
+            end
+            local targetPos = nil
+            if lockOnActive and lockOnTarget and lockOnTarget.Character then
+                local tPart = lockOnTarget.Character:FindFirstChild("Head") or lockOnTarget.Character:FindFirstChild("HumanoidRootPart")
+                if tPart then targetPos = tPart.Position end
+            else
+                local res = getMouseRaycast()
+                if res and res.Position then targetPos = res.Position end
+            end
+
+            if targetPos then
+                local neckWorldPos = head.Position
+                local dir = (targetPos - neckWorldPos).Unit
+                local localDir = neck.Parent.CFrame:VectorToObjectSpace(dir)
+                local goalC0 = CFrame.new(originalNeckC0.Position) * CFrame.Angles(math.asin(localDir.Y), -math.atan2(localDir.X, -localDir.Z), 0)
+                if not smoothNeckC0 then smoothNeckC0 = neck.C0 end
+                smoothNeckC0 = smoothNeckC0:Lerp(goalC0, math.clamp(deltaTime * 15, 0.1, 0.5))
+                neck.C0 = smoothNeckC0
+            end
+        end
+    elseif currentNeck and originalNeckC0 then
+        currentNeck.C0 = originalNeckC0
+        currentNeck = nil
+        originalNeckC0 = nil
+        smoothNeckC0 = nil
+    end
+
+    -- 3. 프리캠 카메라 조작 업데이트
+    if freecamEnabled then
+        smoothYaw = smoothYaw + (yaw - smoothYaw) * math.clamp(deltaTime * lerpSpeed, 0, 1)
+        smoothPitch = smoothPitch + (pitch - smoothPitch) * math.clamp(deltaTime * lerpSpeed, 0, 1)
+
+        local moveVector = Vector3.zero
+        if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveVector = moveVector + Vector3.new(0, 0, -1) end
+        if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveVector = moveVector + Vector3.new(0, 0, 1) end
+        if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveVector = moveVector + Vector3.new(-1, 0, 0) end
+        if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveVector = moveVector + Vector3.new(1, 0, 0) end
+        if UserInputService:IsKeyDown(Enum.KeyCode.E) then moveVector = moveVector + Vector3.new(0, 1, 0) end
+        if UserInputService:IsKeyDown(Enum.KeyCode.Q) then moveVector = moveVector + Vector3.new(0, -1, 0) end
+
+        local camRot = CFrame.Angles(0, math.rad(smoothYaw), 0) * CFrame.Angles(math.rad(smoothPitch), 0, 0)
+        if moveVector.Magnitude > 0 then
+            moveVector = moveVector.Unit
+            local speed = baseSpeed
+            if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then speed = speed * 2.5 end
+            velocity = velocity + (camRot * moveVector * speed - velocity) * math.clamp(deltaTime * acceleration, 0, 1)
+        else
+            velocity = velocity * (1 - math.clamp(deltaTime * acceleration, 0, 1))
+        end
+
+        position = position + velocity * deltaTime
+        camera.CFrame = CFrame.new(position) * camRot
+        camera.FieldOfView = camera.FieldOfView + (targetFov - camera.FieldOfView) * math.clamp(deltaTime * fovLerpSpeed, 0, 1)
+    end
+end)
+
+-- -------------------------------------------------------------
+-- 키보드 / 마우스 입력 바인딩 처리
+-- -------------------------------------------------------------
 UserInputService.InputChanged:Connect(function(input, gameProcessed)
     if gameProcessed then return end
-    if freecamEnabled and input.UserInputType == Enum.UserInputType.MouseWheel then
-        targetFov = math.clamp(targetFov - (input.Position.Z * 6), 15, 120)
+    if freecamEnabled then
+        -- 프리캠 마우스 회전 (화면 바라보기 이동) 처리
+        if input.UserInputType == Enum.UserInputType.MouseMovement then
+            local delta = input.Delta
+            yaw = yaw - delta.X * sensitivity
+            pitch = math.clamp(pitch - delta.Y * sensitivity, -89, 89)
+        elseif input.UserInputType == Enum.UserInputType.MouseWheel then
+            targetFov = math.clamp(targetFov - (input.Position.Z * 6), 15, 120)
+        end
     end
 end)
 
@@ -1818,7 +2122,6 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
             if inputState.End == true then
                 inputState.End = "LongPressed"
                 if not keyStates.EndLong then
-                    showNotification("⚠️ End 길게누르기 기능이 비활성화되어 있습니다.", "⚠️ End Hold Key is disabled.")
                     return
                 end
                 if freecamEnabled then
@@ -1835,10 +2138,8 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
             if inputState.RightBracket == true then
                 inputState.RightBracket = "LongPressed"
                 if not keyStates.RightBracketLong then
-                    showNotification("⚠️ ] 길게누르기 기능이 비활성화되어 있습니다.", "⚠️ ] Hold Key is disabled.")
                     return
                 end
-                -- 락온 상태일 때는 TP 모드 켜기 차단
                 if lockOnActive then
                     showNotification("⚠️ 락온 상태에서는 TP 모드를 켤 수 없습니다.", "⚠️ Cannot enable TP mode while Lock-On is active.")
                     playSound(8503529139, 1, 0.8)
@@ -1874,6 +2175,11 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
         end
         
         if freecamEnabled then showNotification("⚠️ 프리캠 작동 중에는 사용할 수 없습니다.", "⚠️ Unavailable during Freecam.") return end
+
+        if not keyStates.LockOn then
+            return
+        end
+
         toggleLockOn()
     end
 
@@ -1883,7 +2189,6 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
             if inputState.PgDn == true then
                 inputState.PgDn = "LongPressed"
                 if not keyStates.PgDnLong then
-                    showNotification("⚠️ PgDn 길게누르기 기능이 비활성화되어 있습니다.", "⚠️ PgDn Hold Key is disabled.")
                     return
                 end
                 if freecamEnabled then
@@ -1935,349 +2240,55 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
     end
 
     if freecamEnabled and blockModeActive then
-        if key == Enum.KeyCode.Z then deleteTargetBlock()
-        elseif key == Enum.KeyCode.X then undoAction()
-        elseif key == Enum.KeyCode.C then redoAction()
+        if key == Enum.KeyCode.Z then
+            deleteTargetBlock()
+        elseif key == Enum.KeyCode.X then
+            undoAction()
+        elseif key == Enum.KeyCode.C then
+            redoAction()
         elseif key == Enum.KeyCode.V then
-            local deletedCount = 0
-            for _, action in ipairs(undoStack) do
-                if action.type == "delete" then deletedCount = deletedCount + 1 end
-            end
-            showNotification(string.format("📊 현재까지 누적 삭제된 블록: %d개", deletedCount), string.format("📊 Total deleted blocks: %d", deletedCount))
-            playSound(8503529139, 1, 1)
-        end
-    end
-
-    if freecamEnabled and pingModeActive then
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            local res = getMouseRaycast()
-            if res then createPingAt(res.Position) end
-        elseif input.UserInputType == Enum.UserInputType.MouseButton2 then
-            local camera = workspace.CurrentCamera
-            local mousePos = UserInputService:GetMouseLocation()
-            local closestPing = nil
-            local shortestDist = 50
-            for pingPart, _ in pairs(activePings) do
-                local screenPos, onScreen = camera:WorldToViewportPoint(pingPart.Position)
-                if onScreen then
-                    local dist = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
-                    if dist < shortestDist then shortestDist = dist closestPing = pingPart end
-                end
-            end
-            if closestPing then destroyPing(closestPing) updateRightSideBar() end
+            showNotification("🧱 삭제된 가상 블록 수: " .. #undoStack, "🧱 Deleted blocks count: " .. #undoStack)
         end
     end
 end)
 
-UserInputService.InputEnded:Connect(function(input, gameProcessed)
+UserInputService.InputEnded:Connect(function(input)
     local key = input.KeyCode
-
-    if key == minimizeKeybind then
-        if freecamEnabled then return end
-        if inputState.Del == true then
-            playSound(8503529139, 1, 1.1)
-        end
-        inputState.Del = false
-    end
 
     if key == Enum.KeyCode.End then
         if inputState.End == true then
             if not keyStates.End then
-                showNotification("⚠️ End 키 기능이 비활성화되어 있습니다.", "⚠️ End Key is disabled.")
-            else
-                if freecamEnabled then disableFreecam(false) else enableFreecam() end
+                return
             end
+            if freecamEnabled then disableFreecam(false) else enableFreecam() end
         end
         inputState.End = false
-    end
-
-    if key == Enum.KeyCode.RightBracket then
-        if inputState.RightBracket == true then
-            if not keyStates.RightBracket then
-                showNotification("⚠️ ] 키 기능이 비활성화되어 있습니다.", "⚠️ ] Key is disabled.")
-            else
-                if freecamEnabled then showNotification("⚠️ 프리캠 작동 중에는 사용할 수 없습니다.", "⚠️ Unavailable during Freecam.") return end
-                headLockActive = not headLockActive
-                if headLockActive then 
-                    showNotification("👀 캐릭터 머리 트래킹이 활성화되었습니다.", "👀 Head Tracking Enabled.") 
-                    playSound(8503529139, 1, 1.2)
-                else 
-                    showNotification("🚫 캐릭터 머리 트래킹이 해제되었습니다. (몸통 고정)", "🚫 Head Tracking Disabled.") 
-                    playSound(8503529139, 1, 0.8) 
-                end
-                if lockOnActive and lockOnTarget and lockOnTarget.Character then createLockOnMarker(lockOnTarget.Character) end
-            end
-        end
-        inputState.RightBracket = false
-    end
-
-    if key == Enum.KeyCode.PageDown then
+    elseif key == Enum.KeyCode.PageDown then
         if inputState.PgDn == true then
-            if not keyStates.PgDn then
-                showNotification("⚠️ PgDn 키 기능이 비활성화되어 있습니다.", "⚠️ PgDn Key is disabled.")
-            else
-                if freecamEnabled then
-                    local character = player.Character
-                    if character and character:FindFirstChild("HumanoidRootPart") then
-                        position = character.HumanoidRootPart.Position + Vector3.new(0, 3, 0)
-                        showNotification("🏃 카메라가 캐릭터 위치로 이동했습니다.", "🏃 Camera moved to player.") playSound(8503529139, 1, 1.2) 
-                    end
-                else playSound(8503529139, 1, 1.1) end
+            -- PgDn 짧게 누르기: 카메라를 내 캐릭터 위치로 즉시 이동
+            if keyStates.PgDn and freecamEnabled then
+                local char = player.Character
+                local targetPart = char and (char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart"))
+                if targetPart then
+                    position = targetPart.Position
+                    showNotification("📷 카메라가 내 캐릭터 위치로 이동했습니다.", "📷 Camera moved to player position.")
+                    playSound(8503529139, 1, 1)
+                end
             end
         end
         inputState.PgDn = false
-    end
-end)
-
-RunService.RenderStepped:Connect(function(dt)
-    frameCount = frameCount + 1
-    if os.clock() - lastTime >= 1 then fps = frameCount frameCount = 0 lastTime = os.clock() end
-
-    local camera = workspace.CurrentCamera
-
-    if skyboxDeleted then
-        Lighting.ClockTime = 12
-        Lighting.GeographicLatitude = 0
-    end
-
-    if lockOnActive and lockOnTarget and lockOnTarget.Character then
-        local hum = lockOnTarget.Character:FindFirstChildOfClass("Humanoid")
-        if hum then
-            hpBlock:SetText(string.format("%s | HP: %d / %d", getFormattedName(lockOnTarget), math.floor(hum.Health), math.floor(hum.MaxHealth)))
-        else
-            hpBlock:SetText("HP: - / -")
-        end
-        
-        local lockHighlight = lockOnTarget.Character:FindFirstChild("LockOnHighlight")
-        if lockHighlight then
-            local hueValue = (tick() % 2) / 2
-            lockHighlight.OutlineColor = Color3.fromHSV(hueValue, 1, 1)
-            lockHighlight.FillColor = Color3.fromHSV(hueValue, 1, 0.4) 
-        end
-    else
-        hpBlock:SetText("HP: - / -")
-    end
-
-    if freecamEnabled then
-        local delta = UserInputService:GetMouseDelta()
-        yaw = yaw - delta.X * sensitivity
-        pitch = math.clamp(pitch - delta.Y * sensitivity, -85, 85)
-        
-        smoothYaw = smoothYaw + (yaw - smoothYaw) * lerpSpeed * dt
-        smoothPitch = smoothPitch + (pitch - smoothPitch) * lerpSpeed * dt
-
-        local moveDir = Vector3.zero
-        if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + Vector3.new(0, 0, -1) end
-        if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir + Vector3.new(0, 0, 1) end
-        if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir + Vector3.new(-1, 0, 0) end
-        if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + Vector3.new(1, 0, 0) end
-        if UserInputService:IsKeyDown(Enum.KeyCode.E) then moveDir = moveDir + Vector3.new(0, 1, 0) end
-        if UserInputService:IsKeyDown(Enum.KeyCode.Q) then moveDir = moveDir + Vector3.new(0, -1, 0) end
-
-        local rotation = CFrame.Angles(0, math.rad(smoothYaw), 0) * CFrame.Angles(math.rad(smoothPitch), 0, 0)
-        local worldMoveDir = rotation:VectorToWorldSpace(moveDir)
-        if worldMoveDir.Magnitude > 0 then worldMoveDir = worldMoveDir.Unit end
-
-        local speed = baseSpeed
-        if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then speed = speed * 2.5 end
-
-        velocity = velocity:Lerp(worldMoveDir * speed, acceleration * dt)
-        position = position + velocity * dt
-        camera.CFrame = CFrame.new(position) * rotation
-
-        camera.FieldOfView = camera.FieldOfView + (targetFov - camera.FieldOfView) * fovLerpSpeed * dt
-
-        if blockModeActive then
-            local res = getMouseRaycast()
-            if res and res.Instance and res.Instance:IsA("BasePart") and res.Instance ~= workspace.Terrain then
-                if blockHoverHighlight.Parent ~= res.Instance then
-                    blockHoverHighlight.Parent = res.Instance
-                end
-                blockHoverHighlight.OutlineColor = Color3.fromHSV((tick() % 2) / 2, 1, 1)
+    elseif key == Enum.KeyCode.RightBracket then
+        if inputState.RightBracket == true then
+            if not keyStates.RightBracket then
+                return
+            end
+            headLockActive = not headLockActive
+            if headLockActive then
+                showNotification("👀 캐릭터 머리 트래킹 활성화", "👀 Head Tracking Enabled") playSound(8503529139, 1, 1.2)
             else
-                blockHoverHighlight.Parent = nil
-            end
-        else
-            blockHoverHighlight.Parent = nil
-        end
-    else
-        blockHoverHighlight.Parent = nil
-    end
-
-    local myChar = player.Character
-    if myChar then
-        local myHum = myChar:FindFirstChildOfClass("Humanoid")
-        local torso = myChar:FindFirstChild("UpperTorso") or myChar:FindFirstChild("Torso")
-        local head = myChar:FindFirstChild("Head")
-        local neck = head and head:FindFirstChild("Neck") or torso and torso:FindFirstChild("Neck")
-
-        local isSitting = myHum and myHum.Sit
-
-        if neck and head and torso and not isSitting then
-            if not originalNeckC0 or currentNeck ~= neck then
-                originalNeckC0 = neck.C0
-                currentNeck = neck
-            end
-
-            neck.Transform = CFrame.identity
-            local shouldTrackNeck = headLockActive and (lockOnActive or not freecamEnabled)
-            
-            local targetHead = nil
-            if lockOnActive and lockOnTarget and lockOnTarget.Character then
-                targetHead = lockOnTarget.Character:FindFirstChild("Head")
-            elseif headLockActive and not lockOnActive then
-                -- 락온 대상이 없을 때 마우스 조준 지점을 향해 머리 추적
-                local mouseRay = camera:ViewportPointToRay(UserInputService:GetMouseLocation().X, UserInputService:GetMouseLocation().Y)
-                targetHead = { Position = mouseRay.Origin + (mouseRay.Direction * 100) }
-            end
-
-            if shouldTrackNeck and targetHead then
-                local torsoCF = torso.CFrame
-                local targetDir = (targetHead.Position - head.Position).Unit
-                local localDir = torsoCF:VectorToObjectSpace(targetDir)
-
-                local headYaw = math.atan2(-localDir.X, -localDir.Z)
-                local headPitch = math.atan2(localDir.Y, -localDir.Z)
-
-                local isTargetInFront = localDir.Z < 0
-                if isTargetInFront and math.abs(headYaw) < math.rad(70) then
-                    headYaw = math.clamp(headYaw, -math.rad(70), math.rad(70))
-                    headPitch = math.clamp(headPitch, -math.rad(45), math.rad(45))
-
-                    local isR15 = head:FindFirstChild("Neck") ~= nil
-                    local targetC0 = originalNeckC0
-                    if isR15 then
-                        targetC0 = originalNeckC0 * CFrame.Angles(headPitch, headYaw, 0)
-                    else
-                        targetC0 = originalNeckC0 * CFrame.Angles(0, -headYaw, 0) * CFrame.Angles(headPitch, 0, 0)
-                    end
-                    
-                    if not smoothNeckC0 then smoothNeckC0 = neck.C0 end
-                    smoothNeckC0 = smoothNeckC0:Lerp(targetC0, 10 * dt)
-                    neck.C0 = smoothNeckC0
-                else
-                    if not smoothNeckC0 then smoothNeckC0 = neck.C0 end
-                    smoothNeckC0 = smoothNeckC0:Lerp(originalNeckC0, 10 * dt)
-                    neck.C0 = smoothNeckC0
-                end
-            else
-                if neck.C0 ~= originalNeckC0 then
-                    if not smoothNeckC0 then smoothNeckC0 = neck.C0 end
-                    smoothNeckC0 = smoothNeckC0:Lerp(originalNeckC0, 10 * dt)
-                    neck.C0 = smoothNeckC0
-                    if (smoothNeckC0.Position - originalNeckC0.Position).Magnitude < 0.001 then
-                        neck.C0 = originalNeckC0
-                        smoothNeckC0 = nil
-                    end
-                end
+                showNotification("🚫 캐릭터 머리 트래킹 해제", "🚫 Head Tracking Disabled") playSound(8503529139, 1, 0.8)
             end
         end
-    end
-
-    -- 카메라 락온 처리
-    if lockOnActive and not freecamEnabled then
-        local targetChar = lockOnTarget and lockOnTarget.Character
-        local targetHumanoid = targetChar and targetChar:FindFirstChildOfClass("Humanoid")
-        
-        if not lockOnTarget or not lockOnTarget.Parent or not targetChar or not targetHumanoid or targetHumanoid.Health <= 0 or not isValidTarget(lockOnTarget) then
-            
-            if targetHumanoid and targetHumanoid.Health <= 0 and targetChar then
-                local victimName = lockOnTarget and getFormattedName(lockOnTarget) or "상대"
-
-                local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
-                local targetHrp = targetChar:FindFirstChild("HumanoidRootPart") or targetChar:FindFirstChild("Torso")
-                local distStr = "10m"
-                if myHrp and targetHrp then
-                    distStr = string.format("%dm", math.floor((myHrp.Position - targetHrp.Position).Magnitude))
-                end
-                
-                addKillFeedMessage(victimName, distStr)
-
-                local hrp = targetChar:FindFirstChild("HumanoidRootPart") or targetChar:FindFirstChild("Torso") or targetChar:FindFirstChild("UpperTorso") or targetChar:FindFirstChild("Head")
-                if hrp then
-                    local deathPos = hrp.Position
-                    task.spawn(function()
-                        local killEffectPart = Instance.new("Part")
-                        killEffectPart.Size = Vector3.new(1, 1, 1)
-                        killEffectPart.Position = deathPos
-                        killEffectPart.Transparency = 1
-                        killEffectPart.Anchored = true
-                        killEffectPart.CanCollide = false
-                        killEffectPart.Parent = workspace
-
-                        local emitter = Instance.new("ParticleEmitter")
-                        emitter.Texture = "rbxassetid://76182265997200"
-                        emitter.Rate = 0
-                        emitter.Lifetime = NumberRange.new(1.2, 2.0)
-                        emitter.Speed = NumberRange.new(3, 8)
-                        emitter.VelocitySpread = 180
-                        emitter.Acceleration = Vector3.new(0, 2, 0)
-                        emitter.Orientation = Enum.ParticleOrientation.FacingCamera
-                        emitter.Size = NumberSequence.new({
-                            NumberSequenceKeypoint.new(0, 1.5),
-                            NumberSequenceKeypoint.new(0.3, 4.0),
-                            NumberSequenceKeypoint.new(0.7, 3.0),
-                            NumberSequenceKeypoint.new(1, 0)
-                        })
-                        emitter.Transparency = NumberSequence.new({
-                            NumberSequenceKeypoint.new(0, 0),
-                            NumberSequenceKeypoint.new(0.8, 0.1),
-                            NumberSequenceKeypoint.new(1, 1)
-                        })
-                        emitter.Color = ColorSequence.new(Color3.fromRGB(255, 255, 255))
-                        emitter.Rotation = NumberRange.new(-180, 180)
-                        emitter.RotSpeed = NumberRange.new(-60, 60)
-                        emitter.SpreadAngle = Vector2.new(180, 180)
-                        emitter.Parent = killEffectPart
-
-                        emitter:Emit(35)
-
-                        playSound(8503529139, 1.5, 1.2)
-                        playSound(4088924043, 1.2, 1)
-
-                        task.delay(4, function()
-                            if killEffectPart and killEffectPart.Parent then
-                                killEffectPart:Destroy()
-                            end
-                        end)
-                    end)
-                    
-                    showNotification("💀 타겟 사망하여 락온이 해제되었습니다.", "💀 Target died. Lock-On released.")
-                else
-                    showNotification("💀 타겟이 사망하여 락온이 해제되었습니다.", "💀 Target died. Lock-On released.")
-                end
-            else
-                showNotification("🚫 타겟 유효성 상실로 락온이 해제되었습니다.", "🚫 Target lost. Lock-On released.")
-            end
-            
-            removeLockOnMarker()
-            lockOnActive = false
-            lockOnTarget = nil
-            hpBlock:SetText("HP: - / -")
-        else
-            local myHrp = myChar and (myChar:FindFirstChild("HumanoidRootPart") or myChar:FindFirstChild("Torso"))
-            local targetHrp = targetChar and (targetChar:FindFirstChild("HumanoidRootPart") or targetChar:FindFirstChild("Torso"))
-            
-            if myHrp and targetHrp then
-                local dist = (myHrp.Position - targetHrp.Position).Magnitude
-                if dist > 1000 then
-                    showNotification("⚠️ 타겟이 1000m 밖으로 벗어나 락온이 해제되었습니다.", "⚠️ Target out of range (> 1000m).")
-                    playSound(8503529139, 1, 0.8)
-                    removeLockOnMarker()
-                    lockOnActive = false
-                    lockOnTarget = nil
-                    hpBlock:SetText("HP: - / -")
-                    return
-                end
-            end
-
-            -- 머리 트래킹(Head Lock) 상태가 켜져 있으면 Head, 꺼져 있으면 Torso/HumanoidRootPart를 조준
-            local targetPart = (headLockActive and targetChar:FindFirstChild("Head")) or targetHrp or targetChar:FindFirstChild("Head")
-            if targetPart then
-                local targetPosition = targetPart.Position
-                local currentCFrame = camera.CFrame
-                camera.CFrame = CFrame.new(currentCFrame.Position, targetPosition)
-            end
-        end
+        inputState.RightBracket = false
     end
 end)
